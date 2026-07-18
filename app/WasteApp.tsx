@@ -43,6 +43,7 @@ import {
 import {
   ChangeEvent,
   PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -51,6 +52,7 @@ import type { Circle, CircleMarker, LayerGroup, Map as LeafletMap } from "leafle
 
 type Tab = "home" | "map" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
+type CameraStatus = "requesting" | "live" | "denied" | "unsupported" | "error";
 type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
 type CollectionStatus = "demo" | "loading" | "success" | "empty" | "error";
 type UserLocation = { lat: number; lng: number; accuracy: number };
@@ -1002,8 +1004,70 @@ function UncertainResult({ onRetry, onBack }: { onRetry: () => void; onBack: () 
 function Scanner({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<ScanState>("ready");
   const [preview, setPreview] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("requesting");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
+  const analysisTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    const requestId = ++cameraRequestRef.current;
+    stopCamera();
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("unsupported");
+      return;
+    }
+
+    setCameraStatus("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+
+      if (requestId !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        void videoRef.current.play().catch(() => undefined);
+      }
+      setCameraStatus("live");
+    } catch (error) {
+      if (requestId !== cameraRequestRef.current) return;
+      stopCamera();
+      const errorName = error instanceof DOMException ? error.name : "";
+      setCameraStatus(errorName === "NotAllowedError" || errorName === "SecurityError" ? "denied" : "error");
+    }
+  }, [stopCamera]);
+
+  useEffect(() => {
+    const startupTimer = window.setTimeout(() => void startCamera(), 0);
+    return () => {
+      window.clearTimeout(startupTimer);
+      cameraRequestRef.current += 1;
+      stopCamera();
+      if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
+    };
+  }, [startCamera, stopCamera]);
 
   useEffect(() => {
     return () => {
@@ -1012,8 +1076,11 @@ function Scanner({ onClose }: { onClose: () => void }) {
   }, [preview]);
 
   function analyze() {
+    cameraRequestRef.current += 1;
+    stopCamera();
     setState("analyzing");
-    window.setTimeout(() => setState("result"), 1500);
+    if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
+    analysisTimerRef.current = window.setTimeout(() => setState("result"), 1500);
   }
 
   function handleFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1024,11 +1091,44 @@ function Scanner({ onClose }: { onClose: () => void }) {
     analyze();
   }
 
+  function capturePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (cameraStatus !== "live" || !video || !canvas || video.videoWidth === 0) {
+      cameraInput.current?.click();
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setCameraStatus("error");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(canvas.toDataURL("image/jpeg", 0.9));
+    analyze();
+  }
+
   function retry() {
     setState("ready");
-    if (fileInput.current) fileInput.current.value = "";
-    window.setTimeout(() => fileInput.current?.click(), 120);
+    setPreview(null);
+    if (galleryInput.current) galleryInput.current.value = "";
+    if (cameraInput.current) cameraInput.current.value = "";
+    window.setTimeout(() => void startCamera(), 120);
   }
+
+  const cameraMessage = {
+    requesting: ["카메라를 준비하고 있어요", "권한 요청이 나타나면 허용을 눌러주세요."],
+    live: ["카메라가 연결됐어요", "물건을 화면 중앙에 맞춰주세요."],
+    denied: ["카메라 권한이 꺼져 있어요", "브라우저 설정에서 카메라를 허용하거나 아래 셔터로 기기 카메라를 여세요."],
+    unsupported: ["실시간 카메라를 지원하지 않아요", "아래 셔터로 기기 카메라를 열거나 보관함에서 선택할 수 있어요."],
+    error: ["카메라를 연결하지 못했어요", "다시 연결하거나 아래 셔터로 기기 카메라를 열어주세요."],
+  }[cameraStatus];
 
   return (
     <motion.div
@@ -1041,9 +1141,10 @@ function Scanner({ onClose }: { onClose: () => void }) {
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98, filter: "blur(8px)" }}
       transition={reduceMotion ? { duration: 0.15 } : spring}
     >
-      <div className="camera-stage" style={preview ? { backgroundImage: `url(${preview})` } : undefined}>
+      <div className={`camera-stage${preview ? " has-preview" : ""}`} style={preview ? { backgroundImage: `url(${preview})` } : undefined}>
+        {!preview && <video ref={videoRef} className={`camera-video${cameraStatus === "live" ? " is-live" : ""}`} autoPlay muted playsInline aria-label="실시간 카메라 화면" />}
         <div className="camera-shade" />
-        {!preview && (
+        {!preview && cameraStatus !== "live" && (
           <div className="sample-object" aria-hidden="true">
             <Bottle size={116} strokeWidth={0.9} />
             <span>PET<br />01</span>
@@ -1061,10 +1162,17 @@ function Scanner({ onClose }: { onClose: () => void }) {
           </div>
         )}
         <AnimatePresence mode="wait">
-          {state === "ready" && (
+          {state === "ready" && cameraStatus === "live" && (
             <motion.div className="camera-instruction" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <strong>물건 하나만 화면에 맞춰주세요</strong>
               <span>라벨과 재질 표시가 보이면 더 정확해요</span>
+            </motion.div>
+          )}
+          {state === "ready" && cameraStatus !== "live" && (
+            <motion.div className={`camera-access ${cameraStatus}`} role="status" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={reduceMotion ? { duration: 0.15 } : spring}>
+              <Camera size={21} />
+              <div><strong>{cameraMessage[0]}</strong><span>{cameraMessage[1]}</span></div>
+              {cameraStatus !== "requesting" && <button type="button" onClick={() => void startCamera()}>다시 연결</button>}
             </motion.div>
           )}
           {state === "analyzing" && (
@@ -1078,13 +1186,15 @@ function Scanner({ onClose }: { onClose: () => void }) {
           <>
             <div className="photo-privacy"><ShieldCheck size={14} /> 현재 MVP는 사진을 서버로 전송하거나 저장하지 않아요</div>
             <div className="camera-controls">
-              <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => fileInput.current?.click()}><ImagePlus size={21} /></button>
-              <motion.button className="shutter" type="button" aria-label="사진 촬영" whileTap={{ scale: 0.88 }} transition={spring} onClick={() => fileInput.current?.click()}><span /></motion.button>
+              <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => galleryInput.current?.click()}><ImagePlus size={21} /></button>
+              <motion.button className="shutter" type="button" aria-label={cameraStatus === "live" ? "사진 촬영" : "기기 카메라 열기"} whileTap={{ scale: 0.88 }} transition={spring} onClick={capturePhoto} disabled={cameraStatus === "requesting"}><span /></motion.button>
               <button className="demo-button" type="button" onClick={analyze}><Sparkles size={17} /><span>샘플<br />체험</span></button>
             </div>
           </>
         )}
-        <input ref={fileInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handleFile} />
+        <canvas ref={canvasRef} className="visually-hidden" aria-hidden="true" />
+        <input ref={galleryInput} className="visually-hidden" type="file" accept="image/*" onChange={handleFile} />
+        <input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handleFile} />
       </div>
       <AnimatePresence>
         {state === "result" && <ConfidentResult onUncertain={() => setState("uncertain")} onDone={onClose} onRetry={retry} />}
