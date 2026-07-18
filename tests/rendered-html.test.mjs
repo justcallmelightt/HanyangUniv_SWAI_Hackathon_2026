@@ -49,6 +49,10 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /서버로 전송하거나 저장하지 않아요/);
   assert.match(app, /환경부 공식 기준으로 교차 검증/);
   assert.match(app, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(app, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(app, /facingMode:\s*\{ ideal: "environment" \}/);
+  assert.match(app, /context\.drawImage\(video/);
+  assert.match(app, /capture="environment"/);
   assert.match(app, /tile\.openstreetmap\.org/);
   assert.match(api, /overpass\/api\/interpreter/);
   assert.match(app, /fetchCollectionPlaces/);

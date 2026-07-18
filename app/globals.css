@@ -349,8 +349,11 @@ button:active { transform: scale(0.975); }
 .primary-button { width: 100%; height: 51px; margin-top: 20px; border: 0; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--green); color: #18200e; font-size: 12px; font-weight: 750; cursor: pointer; box-shadow: inset 0 1px rgba(255,255,255,.62); text-decoration: none; }
 
 .scanner { position: fixed; z-index: 100; inset: 0; overflow-y: auto; background: #101310; color: white; }
-.camera-stage { position: relative; min-height: 100vh; overflow: hidden; background-color: #252a25; background-size: cover; background-position: center; }
+.camera-stage { position: relative; min-height: 100vh; min-height: 100dvh; overflow: hidden; background-color: #252a25; background-size: cover; background-position: center; }
 .camera-stage::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center, #4d554b, #222722 68%); }
+.camera-stage.has-preview::before { opacity: 0; }
+.camera-video { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.01); transition: opacity .2s ease; }
+.camera-video.is-live { opacity: 1; }
 .camera-shade { position: absolute; z-index: 2; inset: 0; background: linear-gradient(rgba(9,12,9,.58), transparent 22%, transparent 66%, rgba(9,12,9,.8)); }
 .scanner-head { position: absolute; z-index: 12; top: 0; left: 0; right: 0; height: 85px; padding: max(18px, env(safe-area-inset-top)) 18px 0; display: flex; align-items: center; justify-content: space-between; }
 .scanner-head .icon-button { color: white; background: rgba(255,255,255,.12); backdrop-filter: blur(12px); border-top: 1px solid rgba(255,255,255,.22); }
@@ -370,6 +373,13 @@ button:active { transform: scale(0.975); }
 .camera-instruction { position: absolute; z-index: 8; left: 24px; right: 24px; bottom: 150px; display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
 .camera-instruction strong { font-size: 15px; letter-spacing: -.025em; }
 .camera-instruction span { color: rgba(255,255,255,.65); font-size: 10px; }
+.camera-access { position: absolute; z-index: 9; left: 50%; bottom: 145px; width: min(calc(100% - 38px), 430px); padding: 14px; border-radius: 18px; display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 10px; transform: translateX(-50%); background: rgba(20,24,20,.68); backdrop-filter: blur(18px) saturate(1.15); border-top: 1px solid rgba(255,255,255,.3); box-shadow: 0 16px 34px rgba(0,0,0,.22); }
+.camera-access > svg { width: 36px; height: 36px; padding: 8px; border-radius: 11px; background: rgba(184,243,74,.14); color: var(--green); }
+.camera-access > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.camera-access strong { font-size: 11px; letter-spacing: -.02em; }
+.camera-access span { color: rgba(255,255,255,.62); font-size: 8px; line-height: 1.45; }
+.camera-access button { min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: rgba(255,255,255,.14); color: white; font-size: 8px; font-weight: 700; cursor: pointer; }
+.camera-access button:active { transform: scale(.95); }
 .camera-controls { position: absolute; z-index: 10; left: 0; right: 0; bottom: max(26px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 1fr 76px 1fr; align-items: center; justify-items: center; }
 .photo-privacy { position: absolute; z-index: 10; left: 50%; bottom: max(112px, calc(env(safe-area-inset-bottom) + 112px)); width: max-content; max-width: calc(100% - 36px); padding: 8px 11px; border-radius: 999px; display: flex; align-items: center; gap: 6px; transform: translateX(-50%); background: rgba(20,24,20,.56); color: rgba(255,255,255,.78); backdrop-filter: blur(16px); border-top: 1px solid rgba(255,255,255,.18); font-size: 8px; text-align: center; }
 .photo-privacy svg { flex: 0 0 auto; color: var(--green); }
@@ -379,6 +389,7 @@ button:active { transform: scale(0.975); }
 .demo-button span { color: white; font-size: 7px; line-height: 1.05; }
 .shutter { width: 74px; height: 74px; padding: 5px; border: 2px solid white; border-radius: 50%; background: transparent; }
 .shutter span { width: 100%; height: 100%; border-radius: 50%; display: block; background: white; }
+.shutter:disabled { cursor: wait; opacity: .48; }
 .analyzing-pill { position: absolute; z-index: 9; left: 50%; bottom: 80px; width: max-content; padding: 12px 16px; border-radius: 17px; display: flex; align-items: center; gap: 11px; transform: translateX(-50%); background: rgba(20,24,20,.72); backdrop-filter: blur(18px); border-top: 1px solid rgba(255,255,255,.22); box-shadow: 0 12px 30px rgba(0,0,0,.2); }
 .analyzing-spinner { width: 22px; height: 22px; border: 2px solid rgba(184,243,74,.25); border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite; }
 .analyzing-pill div { display: flex; flex-direction: column; gap: 3px; }
