@@ -33,6 +33,13 @@ export async function POST(request: Request) {
     confidence: Math.max(0, Math.min(100, Number(rawAnalysis.confidence) || 0)),
     summary: clean(rawAnalysis.summary, 200),
     evidence: Array.isArray(rawAnalysis.evidence) ? rawAnalysis.evidence.map((item) => clean(item, 120)).filter(Boolean).slice(0, 4) : [],
+    steps: Array.isArray(rawAnalysis.steps) ? rawAnalysis.steps.flatMap((step) => {
+      if (!step || typeof step !== "object") return [];
+      const item = step as Record<string, unknown>;
+      const title = clean(item.title, 80);
+      const description = clean(item.description, 180);
+      return title && description ? [{ title, description }] : [];
+    }).slice(0, 5) : [],
     caution: clean(rawAnalysis.caution, 200),
   };
 
@@ -59,6 +66,7 @@ export async function POST(request: Request) {
           parts: [{ text: [
             "너는 대한민국 생활폐기물 분리배출을 돕는 후속 대화 AI다.",
             "제공된 사진 분석 결과 안에서만 물체를 지칭하고, 사진에서 확인하지 못한 오염·재질·표시를 지어내지 마라.",
+            "최초 분석의 summary와 steps를 우선 사실로 사용하고 절대 반대로 답하지 마라. 사용자의 질문이 충돌하면 최초 행동 계획을 다시 설명하라.",
             "질문에 먼저 한 문장으로 직접 답한 뒤, 사용자가 지금 할 행동을 짧게 알려라.",
             "분석 상태가 uncertain이거나 근거가 부족하면 단정하지 말고 확인할 사진 각도나 재질 표시를 구체적으로 요청하라.",
             "지역마다 기준이 다를 수 있는 내용은 지자체 안내 확인을 함께 말하라.",

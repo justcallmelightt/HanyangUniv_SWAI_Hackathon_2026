@@ -66,6 +66,7 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(analysisApi, /"Cache-Control": "no-store"/);
   assert.match(chatApi, /gemini-3\.1-flash-lite/);
   assert.match(chatApi, /분석 상태가 uncertain이거나 근거가 부족하면/);
+  assert.match(chatApi, /summary와 steps를 우선 사실로 사용/);
   assert.match(chatApi, /slice\(-6\)/);
   assert.match(chatApi, /"Cache-Control": "no-store"/);
   assert.match(envExample, /^GEMINI_API_KEY=/m);
