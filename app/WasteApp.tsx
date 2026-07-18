@@ -62,6 +62,17 @@ import {
 import type { Circle, CircleMarker, LayerGroup, Map as LeafletMap } from "leaflet";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "./supabase-client";
+import {
+  type MonthlyStats,
+  type WasteRecord,
+  addRecord,
+  computeMonthlyStats,
+  createRecord,
+  formatRecordTime,
+  loadGuestRecords,
+  loadRecordsFromUser,
+  saveGuestRecords,
+} from "./waste-stats";
 
 type Tab = "home" | "map" | "ai" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
@@ -496,6 +507,7 @@ function HomeView({
   userLocation,
   collectionPlaces,
   collectionStatus,
+  monthCount,
 }: {
   onScan: () => void;
   onMap: () => void;
@@ -503,6 +515,7 @@ function HomeView({
   userLocation: UserLocation | null;
   collectionPlaces: Place[];
   collectionStatus: CollectionStatus;
+  monthCount: number;
 }) {
   const nearbyPlaces = userLocation
     ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
@@ -523,9 +536,9 @@ function HomeView({
           <span className="eyebrow">7월 18일 · 금요일</span>
           <h1>오늘도 잘 버려볼까요?</h1>
         </div>
-        <div className="impact-badge" aria-label="이번 달 12개 올바르게 분리배출">
+        <div className="impact-badge" aria-label={`이번 달 ${monthCount}개 올바르게 분리배출`}>
           <Recycle size={16} />
-          <strong>12</strong>
+          <strong>{monthCount}</strong>
         </div>
       </section>
 
@@ -769,12 +782,16 @@ function MapView({
   );
 }
 
-function HistoryView({ onScan }: { onScan: () => void }) {
-  const records = [
-    { icon: Bottle, name: "투명 페트병", info: "플라스틱 · 재활용", time: "오늘, 오후 2:32", tone: "mint" },
-    { icon: PackageOpen, name: "코팅된 택배 봉투", info: "비닐 · 라벨 분리", time: "어제, 오후 7:18", tone: "lilac" },
-    { icon: GlassWater, name: "갈색 유리병", info: "유리 · 내용물 비우기", time: "7월 15일", tone: "yellow" },
-  ];
+function iconForRecord(record: WasteRecord) {
+  const text = `${record.itemName} ${record.material} ${record.category}`;
+  if (/유리/.test(text)) return { Icon: GlassWater, tone: "yellow" };
+  if (/비닐|코팅|봉투|포장|종이/.test(text)) return { Icon: PackageOpen, tone: "lilac" };
+  return { Icon: Bottle, tone: "mint" };
+}
+
+function HistoryView({ onScan, records, monthlyStats }: { onScan: () => void; records: WasteRecord[]; monthlyStats: MonthlyStats }) {
+  const recentRecords = records.slice(0, 5);
+  const diffLabel = monthlyStats.diff > 0 ? `+${monthlyStats.diff}` : monthlyStats.diff < 0 ? `${monthlyStats.diff}` : "±0";
 
   return (
     <motion.main
@@ -787,25 +804,25 @@ function HistoryView({ onScan }: { onScan: () => void }) {
       <div className="page-heading">
         <span className="eyebrow">나의 기록</span>
         <h1>잘 버린 순간들</h1>
-        <p>작은 실천이 이번 달 탄소 2.4kg을 줄였어요.</p>
+        <p>이번 달 활동의 참고용 탄소 절감 추정치는 {monthlyStats.estimatedCarbonKg.toFixed(1)}kg CO₂e예요.</p>
       </div>
       <div className="impact-card">
         <div>
-          <span>7월의 올바른 분리배출</span>
-          <strong>12<small>개</small></strong>
+          <span>{new Date().getMonth() + 1}월의 올바른 분리배출</span>
+          <strong>{monthlyStats.thisMonthCount}<small>개</small></strong>
         </div>
-        <div className="impact-ring"><span>+4</span><small>지난달보다</small></div>
+        <div className="impact-ring"><span>{diffLabel}</span><small>지난달보다</small></div>
       </div>
-      <div className="record-heading"><strong>최근 분석</strong><button type="button">전체 보기</button></div>
-      <div className="record-list">
-        {records.map((record) => (
-          <button type="button" key={record.name}>
-            <span className={`record-icon ${record.tone}`}><record.icon size={23} /></span>
-            <span className="record-copy"><strong>{record.name}</strong><small>{record.info}</small><em>{record.time}</em></span>
-            <ChevronRight size={18} />
-          </button>
-        ))}
-      </div>
+      <div className="record-heading"><strong>최근 분석</strong></div>
+      {recentRecords.length ? <div className="record-list">
+        {recentRecords.map((record) => {
+          const { Icon, tone } = iconForRecord(record);
+          return <div className="record-item" key={record.id}>
+            <span className={`record-icon ${tone}`}><Icon size={23} /></span>
+            <span className="record-copy"><strong>{record.itemName}</strong><small>{record.material} · {record.category}</small><em>{formatRecordTime(record.timestamp)}</em></span>
+          </div>;
+        })}
+      </div> : <div className="record-empty"><Recycle size={22} /><p>아직 분석 기록이 없어요.<br />첫 물건을 스캔하고 기록을 시작해보세요.</p></div>}
       <button className="history-scan" type="button" onClick={onScan}>
         <Camera size={20} /> 새로운 물건 확인하기
       </button>
@@ -1043,7 +1060,7 @@ function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null;
             <h1>기록을 이어서 관리하세요</h1>
             <p>로그인하면 기기를 바꿔도 활동 기록과 즐겨찾기를 이어갈 수 있어요.</p>
             <motion.button className="profile-login" type="button" whileTap={{ scale: 0.975 }} transition={spring} onClick={onLogin}><LogIn size={17} /> 로그인 또는 회원가입</motion.button>
-            <small className="guest-note"><ShieldCheck size={13} /> 촬영한 사진은 분석에만 사용되어 버림 서버나 계정에 저장되지 않으며, 로그인 정보는 인증에만 사용되고 Supabase가 안전하게 처리해요.</small>
+            <small className="guest-note"><ShieldCheck size={13} /> 촬영한 사진은 분석에만, 로그인 정보는 인증에만 사용되며 버림 서버에 저장되지 않아요. 로그인 없이도 핵심 기능을 쓸 수 있어요.</small>
           </>
         )}
       </div>
@@ -1785,6 +1802,8 @@ function ProgramShell({
   onLogin,
   onSignOut,
   latestAnalysis,
+  records,
+  monthlyStats,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1804,6 +1823,8 @@ function ProgramShell({
   onLogin: () => void;
   onSignOut: () => void;
   latestAnalysis: WasteAnalysis | null;
+  records: WasteRecord[];
+  monthlyStats: MonthlyStats;
 }) {
   return (
     <motion.div
@@ -1817,10 +1838,10 @@ function ProgramShell({
         <Header onNotification={onNotification} onBack={onBack} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />
         <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
         <AnimatePresence mode="wait">
-          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
+          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} monthCount={monthlyStats.thisMonthCount} />}
           {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} collectionMeta={collectionMeta} onRefreshCollections={onRefreshCollections} />}
           {tab === "ai" && <UnifiedAiView key="ai" analysis={latestAnalysis} userLocation={userLocation} places={collectionPlaces} onScan={onScan} onMap={() => onTabChange("map")} />}
-          {tab === "history" && <HistoryView key="history" onScan={onScan} />}
+          {tab === "history" && <HistoryView key="history" onScan={onScan} records={records} monthlyStats={monthlyStats} />}
           {tab === "profile" && <ProfileView key="profile" user={authUser} loading={authLoading} onLogin={onLogin} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -1844,6 +1865,8 @@ export function WasteApp() {
   const [collectionMeta, setCollectionMeta] = useState<CollectionMeta | null>(null);
   const [collectionRefresh, setCollectionRefresh] = useState(0);
   const [latestAnalysis, setLatestAnalysis] = useState<WasteAnalysis | null>(null);
+  const [records, setRecords] = useState<WasteRecord[]>(() => loadGuestRecords());
+  const monthlyStats = computeMonthlyStats(records);
 
   useEffect(() => {
     const client = getSupabaseBrowserClient();
@@ -1852,7 +1875,9 @@ export function WasteApp() {
     let active = true;
     client.auth.getUser().then(({ data }) => {
       if (active) {
-        setAuthUser(data.user ?? null);
+        const user = data.user ?? null;
+        setAuthUser(user);
+        setRecords(user ? loadRecordsFromUser(user) : loadGuestRecords());
         setAuthLoading(false);
       }
     }).catch(() => {
@@ -1861,7 +1886,9 @@ export function WasteApp() {
 
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      setAuthUser(session?.user ?? null);
+      const user = session?.user ?? null;
+      setAuthUser(user);
+      setRecords(user ? loadRecordsFromUser(user) : loadGuestRecords());
       setAuthLoading(false);
     });
 
@@ -1943,6 +1970,22 @@ export function WasteApp() {
     if (!client) return;
     await client.auth.signOut();
     setAuthUser(null);
+    setRecords(loadGuestRecords());
+  }
+
+  function rememberAnalysis(analysis: WasteAnalysis) {
+    setLatestAnalysis(analysis);
+    if (analysis.status !== "confident") return;
+    const record = createRecord(analysis);
+    setRecords((previous) => {
+      const next = addRecord(previous, record);
+      if (authUser) {
+        void getSupabaseBrowserClient()?.auth.updateUser({ data: { wasteRecords: next } });
+      } else {
+        saveGuestRecords(next);
+      }
+      return next;
+    });
   }
 
   return (
@@ -1971,13 +2014,15 @@ export function WasteApp() {
             onLogin={() => setAuthOpen(true)}
             onSignOut={() => void signOut()}
             latestAnalysis={latestAnalysis}
+            records={records}
+            monthlyStats={monthlyStats}
           />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {authOpen && <AuthDialog key="auth-dialog" onClose={() => setAuthOpen(false)} />}
-        {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} onAnalysis={setLatestAnalysis} />}
+        {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} onAnalysis={rememberAnalysis} />}
         {entered && selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
         {entered && notice && (
           <motion.div className="notice-toast" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring}>

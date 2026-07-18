@@ -92,6 +92,9 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /signInWithPassword/);
   assert.match(app, /signUp/);
   assert.match(app, /signInWithOAuth/);
+  assert.match(app, /rememberAnalysis/);
+  assert.match(app, /loadRecordsFromUser/);
+  assert.match(app, /참고용 탄소 절감 추정치/);
   assert.match(layout, /applicationName:\s*"버림"/);
   assert.match(layout, /openGraph:/);
   assert.match(hosting, /"project_id"/);
