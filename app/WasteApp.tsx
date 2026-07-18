@@ -765,7 +765,6 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
 
       <section className="landing-hero">
         <div className="landing-copy">
-          <span className="landing-kicker"><i /> WASTE, SORTED.</span>
           <h1>버리는 순간까지<br />망설이지 않도록.</h1>
           <p>가까운 수거함을 찾고, 사진 한 장으로 품목과 배출 방법을 확인하세요.</p>
           <motion.button
@@ -775,43 +774,9 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
             transition={spring}
             onClick={onEnter}
           >
-            <ScanLine size={20} /> 지금 사진으로 확인
+            들어가기
             <ArrowRight size={18} />
           </motion.button>
-          <div className="landing-stats">
-            <div><strong>3초</strong><span>평균 분석 시간</span></div>
-            <div><strong>4단계</strong><span>맞춤 행동 요령</span></div>
-            <div><strong>내 주변</strong><span>수거함 위치 안내</span></div>
-          </div>
-        </div>
-
-        <div className="landing-preview" aria-hidden="true">
-          <div className="preview-topbar">
-            <span><i /> 물건을 인식하고 있어요</span>
-            <em>92%</em>
-          </div>
-          <div className="preview-workspace">
-            <div className="preview-camera">
-              <div className="preview-corners" />
-              <Bottle size={116} strokeWidth={1.05} />
-              <motion.span
-                animate={{ y: [0, 150, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              />
-            </div>
-            <div className="preview-result">
-              <span><Check size={14} /> 투명 페트병</span>
-              <h2>비우고, 헹구고,<br />라벨을 떼어주세요.</h2>
-              <div><i>1</i><p><strong>내용물 비우기</strong><small>남은 음료를 완전히 비워요</small></p></div>
-              <div><i>2</i><p><strong>가볍게 헹구기</strong><small>물로 한 번만 헹궈도 충분해요</small></p></div>
-              <div><i>3</i><p><strong>라벨 분리하기</strong><small>라벨은 비닐류로 분리해요</small></p></div>
-            </div>
-          </div>
-          <div className="preview-map-strip">
-            <span><MapPin size={17} /> 가장 가까운 수거함</span>
-            <strong>관악구 스마트 분리수거함</strong>
-            <em>120m · 도보 2분</em>
-          </div>
         </div>
       </section>
 
