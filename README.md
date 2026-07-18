@@ -1,98 +1,96 @@
-# vinext-starter
+# WasteSuperApp — 버림
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+> 버리는 순간까지 망설이지 않도록.
 
-## Prerequisites
+가까운 분리배출 장소를 찾고, 사진 한 장으로 쓰레기의 종류와 올바른 배출 방법을 확인할 수 있는 분리배출 Super App입니다.
 
-- Node.js `>=22.13.0`
+## 배포 주소
 
-## Quick Start
+[WasteSuperApp 실행하기](https://beorim-waste-guide.justcallmelight.chatgpt.site)
+
+## 주요 기능
+
+- 지도에서 주변 분리수거장과 쓰레기통 위치 확인
+- 사진 촬영 또는 이미지 업로드를 통한 품목 분석 체험
+- 품목별 단계형 분리배출 행동 요령 제공
+- 분석이 불확실할 때 뒷면 촬영, 흔들림 개선 등 추가 촬영 안내
+- 최근 분석 기록과 분리배출 활동 확인
+- 데스크톱과 모바일 화면 대응
+
+> 현재 사진 분석 결과와 장소 정보는 샘플 데이터로 동작하는 인터랙티브 MVP입니다.
+
+## 기술 스택
+
+- React 19
+- Next.js 16 / vinext
+- TypeScript
+- Motion
+- Lucide React
+- Cloudflare Workers 호환 빌드
+
+## 실행 방법
+
+### 1. 저장소 내려받기
+
+```bash
+git clone https://github.com/justcallmelightt/HanyangUniv_SWAI_Hackerthon.git
+cd HanyangUniv_SWAI_Hackerthon
+```
+
+### 2. 패키지 설치
+
+Node.js `22.13.0` 이상이 필요합니다.
 
 ```bash
 npm install
+```
+
+### 3. 개발 서버 실행
+
+```bash
 npm run dev
+```
+
+터미널에 표시되는 주소를 브라우저에서 엽니다.
+
+```text
+http://localhost:3000
+```
+
+`3000` 포트가 사용 중이면 `3001`처럼 다른 주소가 표시될 수 있습니다.
+
+### 4. 실행 종료
+
+실행 중인 터미널에서 `Control + C`를 누릅니다.
+
+## 프로덕션 빌드
+
+```bash
 npm run build
+npm run start
 ```
 
-This starter does not use `wrangler.jsonc`.
+## 검사 명령어
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm run lint
+npm test
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+## 주요 파일
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+```text
+app/
+├── WasteApp.tsx   # 화면과 주요 인터랙션
+├── globals.css    # 전체 디자인과 반응형 스타일
+├── layout.tsx     # 메타데이터와 공통 레이아웃
+└── page.tsx       # 애플리케이션 진입점
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+public/
+├── PretendardVariable.woff2
+└── og.png
+```
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+## 라이선스
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+해커톤 프로젝트 및 학습 목적으로 제작되었습니다.
