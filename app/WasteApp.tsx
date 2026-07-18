@@ -1011,6 +1011,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
   const cameraInput = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraRequestRef = useRef(0);
+  const cameraTimeoutRef = useRef<number | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
 
@@ -1030,6 +1031,10 @@ function Scanner({ onClose }: { onClose: () => void }) {
     }
 
     setCameraStatus("requesting");
+    if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
+    cameraTimeoutRef.current = window.setTimeout(() => {
+      if (requestId === cameraRequestRef.current && !streamRef.current) setCameraStatus("error");
+    }, 4_000);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -1045,6 +1050,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
         return;
       }
 
+      if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -1053,6 +1059,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
       setCameraStatus("live");
     } catch (error) {
       if (requestId !== cameraRequestRef.current) return;
+      if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
       stopCamera();
       const errorName = error instanceof DOMException ? error.name : "";
       setCameraStatus(errorName === "NotAllowedError" || errorName === "SecurityError" ? "denied" : "error");
@@ -1065,6 +1072,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
       window.clearTimeout(startupTimer);
       cameraRequestRef.current += 1;
       stopCamera();
+      if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
       if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
     };
   }, [startCamera, stopCamera]);
@@ -1077,6 +1085,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
 
   function analyze() {
     cameraRequestRef.current += 1;
+    if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
     stopCamera();
     setState("analyzing");
     if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
@@ -1123,11 +1132,11 @@ function Scanner({ onClose }: { onClose: () => void }) {
   }
 
   const cameraMessage = {
-    requesting: ["카메라를 준비하고 있어요", "권한 요청이 나타나면 허용을 눌러주세요."],
+    requesting: ["카메라 권한을 기다리고 있어요", "권한 창이 보이지 않으면 기기 카메라 열기를 눌러주세요."],
     live: ["카메라가 연결됐어요", "물건을 화면 중앙에 맞춰주세요."],
-    denied: ["카메라 권한이 꺼져 있어요", "브라우저 설정에서 카메라를 허용하거나 아래 셔터로 기기 카메라를 여세요."],
+    denied: ["카메라 권한이 꺼져 있어요", "브라우저 설정에서 허용하거나 기기 카메라로 바로 촬영하세요."],
     unsupported: ["실시간 카메라를 지원하지 않아요", "아래 셔터로 기기 카메라를 열거나 보관함에서 선택할 수 있어요."],
-    error: ["카메라를 연결하지 못했어요", "다시 연결하거나 아래 셔터로 기기 카메라를 열어주세요."],
+    error: ["실시간 카메라 연결이 지연되고 있어요", "내장 브라우저에서는 제한될 수 있어요. 기기 카메라로 바로 촬영할 수 있습니다."],
   }[cameraStatus];
 
   return (
@@ -1172,7 +1181,10 @@ function Scanner({ onClose }: { onClose: () => void }) {
             <motion.div className={`camera-access ${cameraStatus}`} role="status" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={reduceMotion ? { duration: 0.15 } : spring}>
               <Camera size={21} />
               <div><strong>{cameraMessage[0]}</strong><span>{cameraMessage[1]}</span></div>
-              {cameraStatus !== "requesting" && <button type="button" onClick={() => void startCamera()}>다시 연결</button>}
+              <div className="camera-access-actions">
+                <button className="open-device-camera" type="button" onClick={() => cameraInput.current?.click()}>기기 카메라 열기</button>
+                {cameraStatus !== "requesting" && <button type="button" onClick={() => void startCamera()}>실시간 다시 연결</button>}
+              </div>
             </motion.div>
           )}
           {state === "analyzing" && (
@@ -1187,7 +1199,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
             <div className="photo-privacy"><ShieldCheck size={14} /> 현재 MVP는 사진을 서버로 전송하거나 저장하지 않아요</div>
             <div className="camera-controls">
               <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => galleryInput.current?.click()}><ImagePlus size={21} /></button>
-              <motion.button className="shutter" type="button" aria-label={cameraStatus === "live" ? "사진 촬영" : "기기 카메라 열기"} whileTap={{ scale: 0.88 }} transition={spring} onClick={capturePhoto} disabled={cameraStatus === "requesting"}><span /></motion.button>
+              <motion.button className="shutter" type="button" aria-label={cameraStatus === "live" ? "사진 촬영" : "기기 카메라 열기"} whileTap={{ scale: 0.88 }} transition={spring} onClick={capturePhoto}><span /></motion.button>
               <button className="demo-button" type="button" onClick={analyze}><Sparkles size={17} /><span>샘플<br />체험</span></button>
             </div>
           </>
