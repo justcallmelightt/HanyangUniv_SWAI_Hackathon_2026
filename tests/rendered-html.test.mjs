@@ -49,6 +49,9 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /환경부 공식 기준으로 교차 검증/);
   assert.match(app, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(app, /tile\.openstreetmap\.org/);
+  assert.match(app, /overpass\/api\/interpreter/);
+  assert.match(app, /fetchCollectionPlaces/);
+  assert.match(app, /OpenStreetMap 실제 수거 지점/);
   assert.match(app, /OpenStreetMap 기반 주변 분리배출 장소 지도/);
   assert.match(layout, /applicationName:\s*"버림"/);
   assert.match(layout, /openGraph:/);

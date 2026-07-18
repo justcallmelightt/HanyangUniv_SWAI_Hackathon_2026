@@ -16,7 +16,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  Clock3,
   Crosshair,
   Droplets,
   ExternalLink,
@@ -48,11 +47,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Circle, CircleMarker, Map as LeafletMap } from "leaflet";
+import type { Circle, CircleMarker, LayerGroup, Map as LeafletMap } from "leaflet";
 
 type Tab = "home" | "map" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
 type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
+type CollectionStatus = "demo" | "loading" | "success" | "empty" | "error";
 type UserLocation = { lat: number; lng: number; accuracy: number };
 
 type Place = {
@@ -62,14 +62,15 @@ type Place = {
   distance: string;
   walk: string;
   status: string;
-  top: string;
-  left: string;
   tone: "green" | "black" | "blue";
   lat: number;
   lng: number;
+  materials: string[];
+  source: "demo" | "osm";
+  sourceUrl?: string;
 };
 
-const places: Place[] = [
+const demoPlaces: Place[] = [
   {
     id: 1,
     name: "관악구 스마트 분리수거함",
@@ -77,11 +78,11 @@ const places: Place[] = [
     distance: "120m",
     walk: "도보 2분",
     status: "지금 이용 가능",
-    top: "27%",
-    left: "58%",
     tone: "green",
     lat: 37.4669,
     lng: 126.9306,
+    materials: ["캔", "페트병", "유리병"],
+    source: "demo",
   },
   {
     id: 2,
@@ -90,11 +91,11 @@ const places: Place[] = [
     distance: "350m",
     walk: "도보 5분",
     status: "18:00까지",
-    top: "54%",
-    left: "27%",
     tone: "black",
     lat: 37.4658,
     lng: 126.9297,
+    materials: ["종이", "플라스틱", "일반쓰레기"],
+    source: "demo",
   },
   {
     id: 3,
@@ -103,11 +104,11 @@ const places: Place[] = [
     distance: "640m",
     walk: "도보 9분",
     status: "24시간",
-    top: "68%",
-    left: "69%",
     tone: "blue",
     lat: 37.4681,
     lng: 126.9325,
+    materials: ["폐건전지", "형광등", "소형가전"],
+    source: "demo",
   },
 ];
 
@@ -126,6 +127,96 @@ function distanceInMeters(from: UserLocation, place: Place) {
 
 function formatDistance(meters: number) {
   return meters < 1_000 ? `${Math.round(meters / 10) * 10}m` : `${(meters / 1_000).toFixed(1)}km`;
+}
+
+type OverpassElement = {
+  id: number;
+  type: "node" | "way" | "relation";
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+};
+
+const materialTags: Array<[string, string]> = [
+  ["recycling:plastic_bottles", "페트병"],
+  ["recycling:plastic", "플라스틱"],
+  ["recycling:plastic_packaging", "플라스틱 포장재"],
+  ["recycling:cans", "캔"],
+  ["recycling:glass_bottles", "유리병"],
+  ["recycling:paper", "종이"],
+  ["recycling:cardboard", "골판지"],
+  ["recycling:batteries", "폐건전지"],
+  ["recycling:small_appliances", "소형가전"],
+  ["recycling:electrical_appliances", "전자제품"],
+  ["recycling:clothes", "의류"],
+  ["recycling:shoes", "신발"],
+  ["recycling:beverage_cartons", "종이팩"],
+];
+
+function materialsFromTags(tags: Record<string, string>) {
+  const materials = materialTags.filter(([key]) => tags[key] === "yes").map(([, label]) => label);
+  if (tags.amenity === "waste_disposal" && materials.length === 0) materials.push("생활폐기물");
+  return materials;
+}
+
+function placeName(tags: Record<string, string>, materials: string[]) {
+  if (tags["name:ko"] || tags.name) return tags["name:ko"] || tags.name;
+  if (materials.includes("의류")) return "의류 수거함";
+  if (tags.operator) return `${tags.operator} 분리수거함`;
+  if (tags.amenity === "waste_disposal") return "생활폐기물 수거 지점";
+  return "분리수거함";
+}
+
+function overpassToPlaces(elements: OverpassElement[], location: UserLocation) {
+  return elements.flatMap((element, index): Place[] => {
+    const lat = element.lat ?? element.center?.lat;
+    const lng = element.lon ?? element.center?.lon;
+    if (typeof lat !== "number" || typeof lng !== "number") return [];
+    const tags = element.tags ?? {};
+    const materials = materialsFromTags(tags);
+    const rawPlace: Place = {
+      id: element.id,
+      name: placeName(tags, materials),
+      type: materials.length ? materials.join(" · ") : "수거 품목 정보 없음",
+      distance: "",
+      walk: "",
+      status: tags.opening_hours ? `운영 ${tags.opening_hours}` : "OpenStreetMap 등록 지점",
+      tone: (["green", "black", "blue"] as const)[index % 3],
+      lat,
+      lng,
+      materials,
+      source: "osm",
+      sourceUrl: `https://www.openstreetmap.org/${element.type}/${element.id}`,
+    };
+    const meters = distanceInMeters(location, rawPlace);
+    return [{ ...rawPlace, distance: formatDistance(meters), walk: `도보 약 ${Math.max(1, Math.round(meters / 80))}분` }];
+  }).sort((a, b) => distanceInMeters(location, a) - distanceInMeters(location, b));
+}
+
+async function fetchCollectionPlaces(location: UserLocation, signal: AbortSignal) {
+  const query = `[out:json][timeout:18];(nwr(around:8000,${location.lat},${location.lng})["amenity"="recycling"]["access"!="private"];nwr(around:5000,${location.lat},${location.lng})["amenity"="waste_disposal"]["access"!="private"];);out center 80;`;
+  const endpoints = [
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: new URLSearchParams({ data: query }),
+        signal,
+      });
+      if (!response.ok) continue;
+      const data = await response.json() as { elements?: OverpassElement[] };
+      if (Array.isArray(data.elements)) return overpassToPlaces(data.elements, location);
+    } catch (error) {
+      if (signal.aborted) throw error;
+    }
+  }
+  throw new Error("Overpass API request failed");
 }
 
 const spring = {
@@ -223,18 +314,24 @@ function MiniMap({
   onPlace,
   onExpand,
   userLocation,
+  places,
+  collectionStatus,
 }: {
   onPlace: (place: Place) => void;
   onExpand?: () => void;
   userLocation: UserLocation | null;
+  places: Place[];
+  collectionStatus: CollectionStatus;
 }) {
   const mapNode = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<LeafletMap | null>(null);
   const userMarker = useRef<CircleMarker | null>(null);
   const accuracyCircle = useRef<Circle | null>(null);
+  const placeLayer = useRef<LayerGroup | null>(null);
   const leaflet = useRef<typeof import("leaflet") | null>(null);
   const onPlaceRef = useRef(onPlace);
   const [mapReady, setMapReady] = useState(false);
+  const compactMap = Boolean(onExpand);
 
   useEffect(() => {
     onPlaceRef.current = onPlace;
@@ -250,29 +347,17 @@ function MiniMap({
       leaflet.current = L;
 
       const map = L.map(mapNode.current, {
-        zoomControl: !onExpand,
+        zoomControl: !compactMap,
         attributionControl: true,
-        scrollWheelZoom: !onExpand,
-      }).setView(fallbackCenter, onExpand ? 15 : 16);
+        scrollWheelZoom: !compactMap,
+      }).setView(fallbackCenter, compactMap ? 15 : 16);
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(map);
 
-      places.forEach((place) => {
-        const color = place.tone === "green" ? "#76a92b" : place.tone === "blue" ? "#4d8bc5" : "#242924";
-        const marker = L.circleMarker([place.lat, place.lng], {
-          radius: 10,
-          color: "#ffffff",
-          weight: 3,
-          fillColor: color,
-          fillOpacity: 1,
-        }).addTo(map);
-        marker.bindTooltip(place.name, { direction: "top", offset: [0, -9] });
-        marker.on("click", () => onPlaceRef.current(place));
-      });
-
+      placeLayer.current = L.layerGroup().addTo(map);
       mapInstance.current = map;
       window.setTimeout(() => map.invalidateSize(), 0);
       setMapReady(true);
@@ -283,9 +368,30 @@ function MiniMap({
       active = false;
       mapInstance.current?.remove();
       mapInstance.current = null;
+      placeLayer.current = null;
       leaflet.current = null;
     };
-  }, [onExpand]);
+  }, [compactMap]);
+
+  useEffect(() => {
+    const L = leaflet.current;
+    const layer = placeLayer.current;
+    if (!L || !layer || !mapReady) return;
+    layer.clearLayers();
+
+    places.forEach((place) => {
+      const color = place.tone === "green" ? "#76a92b" : place.tone === "blue" ? "#4d8bc5" : "#242924";
+      const marker = L.circleMarker([place.lat, place.lng], {
+        radius: 10,
+        color: "#ffffff",
+        weight: 3,
+        fillColor: color,
+        fillOpacity: 1,
+      }).addTo(layer);
+      marker.bindTooltip(place.name, { direction: "top", offset: [0, -9] });
+      marker.on("click", () => onPlaceRef.current(place));
+    });
+  }, [mapReady, places]);
 
   useEffect(() => {
     const L = leaflet.current;
@@ -319,7 +425,13 @@ function MiniMap({
   return (
     <div className="map-canvas" aria-label="OpenStreetMap 기반 주변 분리배출 장소 지도">
       <div ref={mapNode} className="leaflet-map" />
-      <span className="map-data-badge">수거함 위치는 MVP 데모 데이터</span>
+      <span className={`map-data-badge ${collectionStatus}`}>
+        {collectionStatus === "demo" && "위치 권한 전 데모 데이터"}
+        {collectionStatus === "loading" && <><span className="data-spinner" /> 실제 수거 지점 불러오는 중</>}
+        {collectionStatus === "success" && <><i /> OpenStreetMap 실제 수거 지점</>}
+        {collectionStatus === "empty" && "반경 8km에 등록된 지점 없음"}
+        {collectionStatus === "error" && "수거 지점 연결 실패"}
+      </span>
       {onExpand && (
         <motion.button
           className="expand-map"
@@ -340,17 +452,21 @@ function HomeView({
   onMap,
   onPlace,
   userLocation,
+  collectionPlaces,
+  collectionStatus,
 }: {
   onScan: () => void;
   onMap: () => void;
   onPlace: (place: Place) => void;
   userLocation: UserLocation | null;
+  collectionPlaces: Place[];
+  collectionStatus: CollectionStatus;
 }) {
   const nearbyPlaces = userLocation
-    ? [...places].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
-    : places;
-  const nearestPlace = nearbyPlaces[0];
-  const nearestDistance = userLocation ? formatDistance(distanceInMeters(userLocation, nearestPlace)) : nearestPlace.distance;
+    ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
+    : collectionPlaces;
+  const nearestPlace = nearbyPlaces[0] ?? null;
+  const nearestDistance = nearestPlace && userLocation ? formatDistance(distanceInMeters(userLocation, nearestPlace)) : nearestPlace?.distance;
 
   return (
     <motion.main
@@ -419,18 +535,22 @@ function HomeView({
           <button type="button" onClick={onMap}>전체 지도 <ChevronRight size={16} /></button>
         </div>
         <div className="map-card">
-          <MiniMap onPlace={onPlace} onExpand={onMap} userLocation={userLocation} />
-          <button className="nearest-place" type="button" onClick={() => onPlace(nearestPlace)}>
-            <div className="place-icon"><Recycle size={20} /></div>
-            <div className="place-copy">
-              <strong>{nearestPlace.name}</strong>
-              <span>{nearestPlace.type}</span>
-            </div>
-            <div className="place-distance">
-              <strong>{nearestDistance}</strong>
-              <span>{userLocation ? "직선거리" : nearestPlace.walk}</span>
-            </div>
-          </button>
+          <MiniMap onPlace={onPlace} onExpand={onMap} userLocation={userLocation} places={collectionPlaces} collectionStatus={collectionStatus} />
+          {nearestPlace ? (
+            <button className="nearest-place" type="button" onClick={() => onPlace(nearestPlace)}>
+              <div className="place-icon"><Recycle size={20} /></div>
+              <div className="place-copy">
+                <strong>{nearestPlace.name}</strong>
+                <span>{nearestPlace.type}</span>
+              </div>
+              <div className="place-distance">
+                <strong>{nearestDistance}</strong>
+                <span>{userLocation ? "직선거리" : nearestPlace.walk}</span>
+              </div>
+            </button>
+          ) : (
+            <div className="place-empty"><MapPin size={19} /><span><strong>{collectionStatus === "loading" ? "주변 수거 지점을 찾고 있어요" : "등록된 수거 지점이 없어요"}</strong><small>{collectionStatus === "error" ? "잠시 후 위치 버튼을 다시 눌러주세요." : "지도에서 검색 범위를 확인해 주세요."}</small></span></div>
+          )}
         </div>
       </section>
 
@@ -463,16 +583,29 @@ function MapView({
   userLocation,
   locationStatus,
   onLocationRequest,
+  collectionPlaces,
+  collectionStatus,
 }: {
   onPlace: (place: Place) => void;
   userLocation: UserLocation | null;
   locationStatus: LocationStatus;
   onLocationRequest: () => void;
+  collectionPlaces: Place[];
+  collectionStatus: CollectionStatus;
 }) {
   const [filter, setFilter] = useState("전체");
   const nearbyPlaces = userLocation
-    ? [...places].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
-    : places;
+    ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
+    : collectionPlaces;
+  const filterTerms: Record<string, string[]> = {
+    전체: [],
+    페트병: ["페트병", "플라스틱"],
+    폐건전지: ["폐건전지"],
+    소형가전: ["소형가전", "전자제품"],
+  };
+  const filteredPlaces = filter === "전체"
+    ? nearbyPlaces
+    : nearbyPlaces.filter((place) => filterTerms[filter].some((term) => place.materials.includes(term)));
   const locationNotice = {
     idle: "",
     loading: "현재 위치를 확인하고 있어요",
@@ -510,7 +643,7 @@ function MapView({
         </div>
       </div>
       <div className="full-map-wrap">
-        <MiniMap onPlace={onPlace} userLocation={userLocation} />
+        <MiniMap onPlace={onPlace} userLocation={userLocation} places={filteredPlaces} collectionStatus={collectionStatus} />
         <motion.button
           className={`locate-button ${locationStatus}`}
           type="button"
@@ -538,8 +671,8 @@ function MapView({
         </AnimatePresence>
       </div>
       <div className="place-list">
-        <div className="list-title"><strong>가까운 순</strong><span>3곳</span></div>
-        {nearbyPlaces.map((place) => (
+        <div className="list-title"><strong>가까운 순</strong><span>{filteredPlaces.length}곳 · {collectionStatus === "success" ? "OpenStreetMap 실시간 연동" : collectionStatus === "demo" ? "위치 권한 전 데모" : "데이터 확인 중"}</span></div>
+        {filteredPlaces.map((place) => (
           <motion.button
             className="place-row"
             type="button"
@@ -562,6 +695,13 @@ function MapView({
             </div>
           </motion.button>
         ))}
+        {filteredPlaces.length === 0 && (
+          <div className="map-empty-state">
+            {collectionStatus === "loading" ? <span className="empty-spinner" /> : <MapPin size={22} />}
+            <strong>{collectionStatus === "loading" ? "실제 수거 지점을 불러오는 중이에요" : filter === "전체" ? "주변에 등록된 수거 지점이 없어요" : `${filter} 수거 지점이 없어요`}</strong>
+            <p>{collectionStatus === "error" ? "외부 지도 데이터 연결이 지연되고 있어요. 위치 버튼을 눌러 다시 시도해 주세요." : "OpenStreetMap에 등록된 공개 지점을 기준으로 보여드려요."}</p>
+          </div>
+        )}
       </div>
     </motion.main>
   );
@@ -732,16 +872,17 @@ function PlaceSheet({ place, onClose }: { place: Place; onClose: () => void }) {
         <h2>{place.name}</h2>
         <p>{place.type}</p>
         <div className="sheet-info-grid">
-          <div><Clock3 size={18} /><span>운영 시간<strong>24시간 이용</strong></span></div>
+          <div><Map size={18} /><span>데이터 출처<strong>{place.source === "osm" ? "OpenStreetMap" : "MVP 데모"}</strong></span></div>
           <div><Navigation size={18} /><span>현재 위치에서<strong>{place.walk}</strong></span></div>
         </div>
         <div className="accepted-items">
           <span>배출 가능 품목</span>
-          <div><i>페트</i><i>캔</i><i>유리</i><i>종이</i></div>
+          <div>{(place.materials.length ? place.materials : ["현장 확인 필요"]).map((material) => <i key={material}>{material}</i>)}</div>
         </div>
-        <motion.button className="primary-button" type="button" whileTap={{ scale: 0.98 }} transition={spring}>
+        {place.sourceUrl && <a className="osm-source-link" href={place.sourceUrl} target="_blank" rel="noreferrer">OpenStreetMap 원본 정보 확인 <ExternalLink size={13} /></a>}
+        <motion.a className="primary-button" href={`https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`} target="_blank" rel="noreferrer" whileTap={{ scale: 0.98 }} transition={spring}>
           <Navigation size={19} /> 길찾기 시작
-        </motion.button>
+        </motion.a>
       </motion.aside>
     </>
   );
@@ -991,6 +1132,8 @@ function ProgramShell({
   userLocation,
   locationStatus,
   onLocationRequest,
+  collectionPlaces,
+  collectionStatus,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1001,6 +1144,8 @@ function ProgramShell({
   userLocation: UserLocation | null;
   locationStatus: LocationStatus;
   onLocationRequest: () => void;
+  collectionPlaces: Place[];
+  collectionStatus: CollectionStatus;
 }) {
   return (
     <motion.div
@@ -1014,8 +1159,8 @@ function ProgramShell({
         <Header onNotification={onNotification} onBack={onBack} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />
         <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
         <AnimatePresence mode="wait">
-          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} />}
-          {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />}
+          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
+          {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} />}
           {tab === "profile" && <ProfileView key="profile" />}
         </AnimatePresence>
@@ -1032,6 +1177,27 @@ export function WasteApp() {
   const [notice, setNotice] = useState(false);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
+  const [collectionPlaces, setCollectionPlaces] = useState<Place[]>(demoPlaces);
+  const [collectionStatus, setCollectionStatus] = useState<CollectionStatus>("demo");
+
+  useEffect(() => {
+    if (!userLocation) return;
+    const controller = new AbortController();
+
+    fetchCollectionPlaces(userLocation, controller.signal)
+      .then((nextPlaces) => {
+        setCollectionPlaces(nextPlaces);
+        setCollectionStatus(nextPlaces.length ? "success" : "empty");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setCollectionPlaces([]);
+          setCollectionStatus("error");
+        }
+      });
+
+    return () => controller.abort();
+  }, [userLocation]);
 
   function requestLocation() {
     if (!("geolocation" in navigator)) {
@@ -1042,6 +1208,8 @@ export function WasteApp() {
     setLocationStatus("loading");
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        setCollectionStatus("loading");
+        setCollectionPlaces([]);
         setUserLocation({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy });
         setLocationStatus("granted");
       },
@@ -1082,6 +1250,8 @@ export function WasteApp() {
             userLocation={userLocation}
             locationStatus={locationStatus}
             onLocationRequest={requestLocation}
+            collectionPlaces={collectionPlaces}
+            collectionStatus={collectionStatus}
           />
         )}
       </AnimatePresence>
