@@ -53,6 +53,8 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /facingMode:\s*\{ ideal: "environment" \}/);
   assert.match(app, /context\.drawImage\(video/);
   assert.match(app, /capture="environment"/);
+  assert.match(app, /기기 카메라 열기/);
+  assert.doesNotMatch(app, /disabled=\{cameraStatus === "requesting"\}/);
   assert.match(app, /tile\.openstreetmap\.org/);
   assert.match(api, /overpass\/api\/interpreter/);
   assert.match(app, /fetchCollectionPlaces/);
