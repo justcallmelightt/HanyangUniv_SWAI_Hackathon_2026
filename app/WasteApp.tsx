@@ -1002,7 +1002,7 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
             </li>
             <li>
               <EyeOff size={14} />
-              <p><strong>로그인 없이도 핵심 기능을 쓸 수 있어요</strong><small>계정 없이 사진 분석과 주변 수거함 찾기를 이용할 수 있습니다.</small></p>
+              <p><strong>사진은 계정에 남지 않아요</strong><small>분석을 위해서만 전송되며, 버림은 사진을 서버에 보관하거나 활동 기록과 연결하지 않습니다.</small></p>
             </li>
           </ul>
         </aside>
@@ -1043,7 +1043,7 @@ function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null;
             <h1>기록을 이어서 관리하세요</h1>
             <p>로그인하면 기기를 바꿔도 활동 기록과 즐겨찾기를 이어갈 수 있어요.</p>
             <motion.button className="profile-login" type="button" whileTap={{ scale: 0.975 }} transition={spring} onClick={onLogin}><LogIn size={17} /> 로그인 또는 회원가입</motion.button>
-            <small className="guest-note"><ShieldCheck size={13} /> 로그인하지 않아도 사진 분석과 지도는 모두 이용할 수 있어요.</small>
+            <small className="guest-note"><ShieldCheck size={13} /> 촬영한 사진은 분석에만 사용되며, 버림 서버나 계정에 저장되지 않아요.</small>
           </>
         )}
       </div>
