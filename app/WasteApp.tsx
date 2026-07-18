@@ -1220,6 +1220,7 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
   return (
     <motion.main
       className="landing-page"
+      data-app-revision="safari-cache-v12"
       initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
