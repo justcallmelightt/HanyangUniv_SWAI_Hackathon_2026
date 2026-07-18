@@ -1,4 +1,4 @@
-# WasteSuperApp — 버림
+# WasteSuperApp(가명) — 버림
 
 > 버리는 순간까지 망설이지 않도록.
 
